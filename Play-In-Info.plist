@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.playin.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>playin</string>
+			</array>
+		</dict>
+		<dict/>
+	</array>
+	<key>SupabaseAnonKey</key>
+	<string>eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlkc3R6cWVocHVwdmZrcmFteWxjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA2NjIzMjAsImV4cCI6MjA4NjIzODMyMH0.OWSInxdB6uDOmH85Yzz2KQX4FzDRfLprQWZnYWJ9toI</string>
+	<key>SupabaseRedirectURL</key>
+	<string>playin://login-callback</string>
+	<key>SupabaseURL</key>
+	<string>https://idstzqehpupvfkramylc.supabase.co</string>
+</dict>
+</plist>

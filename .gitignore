@@ -1,0 +1,50 @@
+# === Xcode / Swift ===
+.DS_Store
+
+# User settings
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+xcuserdata/
+*.moved-aside
+*.xccheckout
+*.xcscmblueprint
+
+# Build
+build/
+DerivedData/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+Packages/
+Package.resolved
+
+# Xcode SPM artifacts
+*.xcodeproj/project.xcworkspace/xcuserdata
+*.xcworkspace/xcuserdata
+
+# Playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
+
+# CocoaPods (si un jour tu l'ajoutes)
+Pods/
+
+# Carthage (si un jour tu l'ajoutes)
+Carthage/Build
+
+# Secrets (à adapter si tu en as)
+*.env
+*.env.*
+GoogleService-Info.plist

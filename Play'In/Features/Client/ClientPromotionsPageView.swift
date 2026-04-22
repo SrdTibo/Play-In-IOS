@@ -218,6 +218,17 @@ struct ClientPromotionsPageView: View {
           }
         }
       }
+
+      // Bouton QR sticky
+      VStack {
+        Spacer()
+        HStack {
+          Spacer()
+          ClientQRFloatingButton(usablePromosCount: upcomingRows.count)
+            .padding(.trailing, 20)
+            .padding(.bottom, 20)
+        }
+      }
     }
     .task { await vm.load() }
     .onChange(of: selectedTab) { _, _ in selectedActivity = nil }

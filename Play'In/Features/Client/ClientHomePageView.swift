@@ -8,71 +8,80 @@
 import SwiftUI
 
 struct ClientHomePageView: View {
+  @StateObject private var promosVM = ClientMyPromotionsViewModel()
+
   var body: some View {
     NavigationStack {
-      ScrollView {
-        VStack(alignment: .leading, spacing: 16) {
-          Text("Accueil")
-            .font(.title)
-            .fontWeight(.bold)
-            .padding(.top, 8)
+      ZStack(alignment: .bottomTrailing) {
+        ScrollView {
+          VStack(alignment: .leading, spacing: 16) {
+            Text("Accueil")
+              .font(.title)
+              .fontWeight(.bold)
+              .padding(.top, 8)
 
-          VStack(alignment: .leading, spacing: 8) {
-            Text("Bienvenue sur Play’In 👋")
-              .font(.headline)
-            Text("Trouve un complexe, découvre des offres et profite des promos.")
-              .foregroundStyle(.secondary)
-          }
-          .padding(14)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .background(.ultraThinMaterial)
-          .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            VStack(alignment: .leading, spacing: 8) {
+              Text("Bienvenue sur Play’In 👋")
+                .font(.headline)
+              Text("Trouve un complexe, découvre des offres et profite des promos.")
+                .foregroundStyle(.secondary)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
 
-          VStack(alignment: .leading, spacing: 10) {
-            Text("Raccourcis")
-              .font(.headline)
+            VStack(alignment: .leading, spacing: 10) {
+              Text("Raccourcis")
+                .font(.headline)
 
-            HStack(spacing: 10) {
-              NavigationLink {
-                ClientMapPageView()
-              } label: {
-                HStack(spacing: 10) {
-                  Image(systemName: "map.fill")
-                  Text("Ouvrir la carte")
-                    .fontWeight(.semibold)
-                  Spacer()
+              HStack(spacing: 10) {
+                NavigationLink {
+                  ClientMapPageView()
+                } label: {
+                  HStack(spacing: 10) {
+                    Image(systemName: "map.fill")
+                    Text("Ouvrir la carte")
+                      .fontWeight(.semibold)
+                    Spacer()
+                  }
+                  .padding(.horizontal, 12)
+                  .padding(.vertical, 12)
+                  .frame(maxWidth: .infinity)
+                  .background(.ultraThinMaterial)
+                  .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 12)
-                .frame(maxWidth: .infinity)
-                .background(.ultraThinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-              }
 
-              NavigationLink {
-                ClientPromotionsPageView()
-              } label: {
-                HStack(spacing: 10) {
-                  Image(systemName: "tag.fill")
-                  Text("Promos")
-                    .fontWeight(.semibold)
-                  Spacer()
+                NavigationLink {
+                  ClientPromotionsPageView()
+                } label: {
+                  HStack(spacing: 10) {
+                    Image(systemName: "tag.fill")
+                    Text("Promos")
+                      .fontWeight(.semibold)
+                    Spacer()
+                  }
+                  .padding(.horizontal, 12)
+                  .padding(.vertical, 12)
+                  .frame(maxWidth: .infinity)
+                  .background(.ultraThinMaterial)
+                  .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 12)
-                .frame(maxWidth: .infinity)
-                .background(.ultraThinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
               }
             }
-          }
 
-          Spacer(minLength: 0)
+            Spacer(minLength: 0)
+          }
+          .padding(16)
         }
-        .padding(16)
+
+        ClientQRFloatingButton(usablePromosCount: promosVM.rows.filter { $0.isUsable }.count)
+          .padding(.trailing, 20)
+          .padding(.bottom, 20)
       }
       .navigationTitle("Home")
       .navigationBarTitleDisplayMode(.inline)
+      .task { await promosVM.load() }
     }
   }
 }

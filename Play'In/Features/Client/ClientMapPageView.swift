@@ -325,6 +325,327 @@ struct ClientUserLocationIndicatorView: View {
   }
 }
 
+// MARK: - Search
+
+struct ClientMapSearchResult: Identifiable, Hashable {
+  let id: UUID
+  let name: String
+  let city: String?
+  let postalCode: String?
+  let latitude: Double
+  let longitude: Double
+  let photos: [String]
+  let promotionsCount: Int
+  let distanceKm: Double?
+  let mainEmoji: String?
+
+  var locationText: String {
+    let parts = [city, postalCode].compactMap {
+      $0?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }.filter { !$0.isEmpty }
+    return parts.joined(separator: " ")
+  }
+}
+
+@MainActor
+final class ClientMapSearchViewModel: ObservableObject {
+  @Published var query: String = ""
+  @Published var results: [ClientMapSearchResult] = []
+  @Published var isSearching: Bool = false
+
+  private var searchTask: Task<Void, Never>?
+
+  func search(userLocation: CLLocation?) {
+    searchTask?.cancel()
+
+    let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.isEmpty {
+      results = []
+      isSearching = false
+      return
+    }
+
+    isSearching = true
+    searchTask = Task {
+      try? await Task.sleep(nanoseconds: 300_000_000) // debounce 300ms
+      if Task.isCancelled { return }
+
+      do {
+        // Recherche par nom avec ilike
+        let pattern = "%\(trimmed)%"
+
+        struct SearchRaw: Decodable {
+          let id: UUID
+          let name: String?
+          let city: String?
+          let postalCode: String?
+          let latitude: Double?
+          let longitude: Double?
+          let photos: [String]
+
+          enum CodingKeys: String, CodingKey {
+            case id, name, city, latitude, longitude, photos
+            case postalCode = "postal_code"
+          }
+
+          init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            id = try c.decode(UUID.self, forKey: .id)
+            name = try c.decodeIfPresent(String.self, forKey: .name)
+            city = try c.decodeIfPresent(String.self, forKey: .city)
+            postalCode = try c.decodeIfPresent(String.self, forKey: .postalCode)
+            latitude = try c.decodeIfPresent(Double.self, forKey: .latitude)
+            longitude = try c.decodeIfPresent(Double.self, forKey: .longitude)
+            if let arr = try? c.decodeIfPresent([String].self, forKey: .photos) {
+              photos = arr
+            } else {
+              photos = []
+            }
+          }
+        }
+
+        let raws: [SearchRaw] = try await SupabaseService.shared.client
+          .from("complexes")
+          .select("id,name,city,postal_code,latitude,longitude,photos")
+          .ilike("name", pattern: pattern)
+          .limit(20)
+          .execute()
+          .value
+
+        if Task.isCancelled { return }
+
+        let ids = raws.map(\.id)
+
+        // Récupérer le nombre de promos par complexe
+        var countByComplex: [UUID: Int] = [:]
+        var emojiByComplex: [UUID: String] = [:]
+        if !ids.isEmpty {
+          async let promoFetch2: [AnnotationPromoRow] = SupabaseService.shared.client
+            .from("promotions")
+            .select("complex_id,promotion_off_peak(reward_amount,reward_unit),promotion_loyalty(reward_amount,reward_unit)")
+            .eq("is_active", value: true)
+            .in("complex_id", values: ids)
+            .execute()
+            .value
+
+          async let activityFetch: [ClientComplexOfferJoinRow] = SupabaseService.shared.client
+            .from("complex_activity_offers")
+            .select("complex_id,activities(id,label,emoji)")
+            .eq("is_active", value: true)
+            .in("complex_id", values: ids)
+            .execute()
+            .value
+
+          let (promoRows, activityRows) = try await (promoFetch2, activityFetch)
+
+          for row in promoRows {
+            countByComplex[row.complexId, default: 0] += 1
+          }
+
+          for row in activityRows {
+            if emojiByComplex[row.id] == nil,
+               let emoji = row.activities?.emoji?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !emoji.isEmpty {
+              emojiByComplex[row.id] = emoji
+            }
+          }
+        }
+
+        if Task.isCancelled { return }
+
+        let mapped: [ClientMapSearchResult] = raws.compactMap { raw in
+          guard let lat = raw.latitude, let lng = raw.longitude else { return nil }
+          let name = (raw.name?.trimmingCharacters(in: .whitespacesAndNewlines))
+            .flatMap { $0.isEmpty ? nil : $0 } ?? "Complexe"
+
+          var distanceKm: Double? = nil
+          if let userLocation {
+            let dest = CLLocation(latitude: lat, longitude: lng)
+            distanceKm = userLocation.distance(from: dest) / 1000
+          }
+
+          return ClientMapSearchResult(
+            id: raw.id,
+            name: name,
+            city: raw.city,
+            postalCode: raw.postalCode,
+            latitude: lat,
+            longitude: lng,
+            photos: raw.photos,
+            promotionsCount: countByComplex[raw.id] ?? 0,
+            distanceKm: distanceKm,
+            mainEmoji: emojiByComplex[raw.id]
+          )
+        }
+        // Tri par distance (les plus proches en premier)
+        .sorted { a, b in
+          guard let da = a.distanceKm else { return false }
+          guard let db = b.distanceKm else { return true }
+          return da < db
+        }
+
+        results = Array(mapped.prefix(8))
+      } catch {
+        if !Task.isCancelled {
+          results = []
+        }
+      }
+      isSearching = false
+    }
+  }
+
+  func clear() {
+    query = ""
+    results = []
+    isSearching = false
+    searchTask?.cancel()
+  }
+}
+
+struct ClientMapSearchBarView: View {
+  @ObservedObject var searchVM: ClientMapSearchViewModel
+  let userLocation: CLLocation?
+  let onSelect: (ClientMapSearchResult) -> Void
+
+  @FocusState private var isFocused: Bool
+  @State private var showResults: Bool = false
+
+  private let accent = Color.appYellow
+
+  var body: some View {
+    VStack(spacing: 0) {
+      // Barre de recherche
+      HStack(spacing: 10) {
+        Image(systemName: "magnifyingglass")
+          .font(.system(size: 16, weight: .medium))
+          .foregroundStyle(.white.opacity(0.4))
+
+        TextField("", text: $searchVM.query, prompt: Text("Rechercher un complexe").foregroundStyle(.white.opacity(0.3)))
+          .font(.system(size: 16))
+          .foregroundStyle(.white)
+          .tint(accent)
+          .focused($isFocused)
+          .autocorrectionDisabled()
+          .textInputAutocapitalization(.never)
+          .submitLabel(.search)
+          .onChange(of: searchVM.query) { _, _ in
+            searchVM.search(userLocation: userLocation)
+          }
+
+        if !searchVM.query.isEmpty {
+          Button {
+            searchVM.clear()
+            isFocused = false
+          } label: {
+            Image(systemName: "xmark.circle.fill")
+              .font(.system(size: 16))
+              .foregroundStyle(.white.opacity(0.4))
+          }
+          .buttonStyle(.plain)
+        }
+      }
+      .padding(.horizontal, 16)
+      .padding(.vertical, 13)
+      .background(
+        RoundedRectangle(cornerRadius: 40, style: .continuous)
+          .fill(.ultraThinMaterial)
+          .environment(\.colorScheme, .dark)
+      )
+      .overlay(
+        RoundedRectangle(cornerRadius: 40, style: .continuous)
+          .strokeBorder(.white.opacity(0.12), lineWidth: 0.5)
+      )
+
+      // Résultats
+      if isFocused && !searchVM.results.isEmpty {
+        VStack(spacing: 0) {
+          ForEach(Array(searchVM.results.enumerated()), id: \.element.id) { index, result in
+            Button {
+              isFocused = false
+              searchVM.clear()
+              onSelect(result)
+            } label: {
+              HStack(spacing: 12) {
+                Text(result.mainEmoji ?? "🏟️")
+                  .font(.system(size: 22))
+                  .frame(width: 36, height: 36)
+                  .background(Color.white.opacity(0.08))
+                  .clipShape(Circle())
+
+                VStack(alignment: .leading, spacing: 3) {
+                  Text(result.name)
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+
+                  HStack(spacing: 4) {
+                    if !result.locationText.isEmpty {
+                      Text(result.locationText)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.white.opacity(0.55))
+                        .lineLimit(1)
+                    }
+                    if let km = result.distanceKm {
+                      Text("·")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.white.opacity(0.35))
+                      Text(km >= 10 ? String(format: "%.0f km", km) : String(format: "%.1f km", km))
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.55))
+                    }
+                  }
+                }
+
+                Spacer()
+
+                if result.promotionsCount > 0 {
+                  Text("\(result.promotionsCount) promo\(result.promotionsCount > 1 ? "s" : "")")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(accent)
+                    .clipShape(Capsule())
+                }
+              }
+              .padding(.horizontal, 16)
+              .padding(.vertical, 11)
+              .offset(y: showResults ? 0 : -8)
+              .opacity(showResults ? 1 : 0)
+              .animation(
+                .spring(response: 0.35, dampingFraction: 0.8)
+                  .delay(Double(index) * 0.04),
+                value: showResults
+              )
+            }
+            .buttonStyle(.plain)
+
+            if result.id != searchVM.results.last?.id {
+              Divider()
+                .background(Color.white.opacity(0.08))
+                .padding(.leading, 16)
+            }
+          }
+        }
+        .padding(.top, 6)
+        .background(
+          RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(Color(white: 0.12))
+            .opacity(showResults ? 1 : 0)
+            .animation(.easeOut(duration: 0.2), value: showResults)
+        )
+        .padding(.top, 6)
+        .onAppear { showResults = true }
+        .onDisappear { showResults = false }
+      }
+    }
+    .animation(.spring(response: 0.35, dampingFraction: 0.85), value: isFocused)
+    .animation(.spring(response: 0.35, dampingFraction: 0.85), value: searchVM.results.map(\.id))
+  }
+}
+
+// MARK: - Map ViewModel
+
 @MainActor
 final class ClientMapViewModel: ObservableObject {
   @Published var complexes: [ClientMapComplex] = []
@@ -333,10 +654,10 @@ final class ClientMapViewModel: ObservableObject {
 
   private var lastBoxKey: String?
 
-  func loadComplexes(in region: MKCoordinateRegion) async {
+  func loadComplexes(in region: MKCoordinateRegion, force: Bool = false) async {
     let box = regionBoundingBox(region: region)
     let key = "\(round6(box.minLat))_\(round6(box.maxLat))_\(round6(box.minLng))_\(round6(box.maxLng))"
-    if key == lastBoxKey { return }
+    if key == lastBoxKey && !force { return }
     lastBoxKey = key
 
     isLoading = true
@@ -737,7 +1058,6 @@ struct ClientComplexMiniCardView: View {
   let userLocation: CLLocation?
   let onTap: () -> Void
   let onClose: () -> Void
-
   private let accent = Color.appYellow
 
   var body: some View {
@@ -860,12 +1180,13 @@ struct ClientComplexMiniCardView: View {
             .scaledToFill()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
+            .transition(.opacity.animation(.easeOut(duration: 0.25)))
         default:
-          Color.clear
+          Color(white: 0.15)
         }
       }
     } else {
-      Color.clear
+      Color(white: 0.15)
     }
   }
 
@@ -2438,6 +2759,7 @@ struct ClientComplexHeroPhoto: View {
 struct ClientMapPageView: View {
   @StateObject private var viewModel = ClientMapViewModel()
   @StateObject private var locationManager = ClientLocationManager()
+  @StateObject private var searchVM = ClientMapSearchViewModel()
 
   @State private var position: MapCameraPosition = .region(
     MKCoordinateRegion(
@@ -2447,7 +2769,7 @@ struct ClientMapPageView: View {
   )
 
   @State private var hasCenteredOnUser: Bool = false
-  @State private var selectedComplex: ClientMapComplex?
+  @State private var visibleComplex: ClientMapComplex?
   @State private var expandedComplex: ClientMapComplex?
   @State private var region: MKCoordinateRegion = MKCoordinateRegion(
     center: CLLocationCoordinate2D(latitude: 48.8566, longitude: 2.3522),
@@ -2458,19 +2780,45 @@ struct ClientMapPageView: View {
 
   var body: some View {
     ZStack(alignment: .bottomTrailing) {
-      Map(position: $position, interactionModes: .all, selection: $selectedComplex) {
+      Map(position: $position, interactionModes: .all) {
+        // 1. Complexes sans promo (arrière-plan)
+        ForEach(viewModel.complexes.filter { $0.promotionsCount == 0 }) { complex in
+          Annotation("", coordinate: complex.coordinate) {
+            ClientMapComplexAnnotationView(complex: complex)
+              .onTapGesture {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                  if visibleComplex == complex {
+                    visibleComplex = nil
+                  } else {
+                    visibleComplex = complex
+                  }
+                }
+              }
+          }
+        }
+
+        // 2. Complexes avec promos (au-dessus)
+        ForEach(viewModel.complexes.filter { $0.promotionsCount > 0 }) { complex in
+          Annotation("", coordinate: complex.coordinate) {
+            ClientMapComplexAnnotationView(complex: complex)
+              .onTapGesture {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                  if visibleComplex == complex {
+                    visibleComplex = nil
+                  } else {
+                    visibleComplex = complex
+                  }
+                }
+              }
+          }
+        }
+
+        // 3. Position utilisateur
         if let userLoc = locationManager.location {
           Annotation("", coordinate: userLoc.coordinate) {
             ClientUserLocationIndicatorView(heading: locationManager.heading)
           }
           .annotationTitles(.hidden)
-        }
-
-        ForEach(viewModel.complexes) { complex in
-          Annotation("", coordinate: complex.coordinate) {
-            ClientMapComplexAnnotationView(complex: complex)
-          }
-          .tag(complex)
         }
       }
       .mapStyle(.standard(elevation: .flat, emphasis: .muted, pointsOfInterest: .excludingAll, showsTraffic: false))
@@ -2519,18 +2867,18 @@ struct ClientMapPageView: View {
       }
     }
     .overlay(alignment: .bottom) {
-      if let complex = selectedComplex, expandedComplex == nil {
+      if let complex = visibleComplex, expandedComplex == nil {
         ClientComplexMiniCardView(
           complex: complex,
           userLocation: locationManager.location,
           onTap: {
-            withAnimation(.spring(response: 0.42, dampingFraction: 0.82)) {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
               expandedComplex = complex
             }
           },
           onClose: {
-            withAnimation(.spring(response: 0.42, dampingFraction: 0.85)) {
-              selectedComplex = nil
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+              visibleComplex = nil
             }
           }
         )
@@ -2542,12 +2890,23 @@ struct ClientMapPageView: View {
         ))
       }
     }
-    .animation(.spring(response: 0.45, dampingFraction: 0.82), value: selectedComplex)
-    .animation(.spring(response: 0.42, dampingFraction: 0.82), value: expandedComplex)
+    .overlay(alignment: .top) {
+      ClientMapSearchBarView(
+        searchVM: searchVM,
+        userLocation: locationManager.location,
+        onSelect: { result in
+          selectSearchResult(result)
+        }
+      )
+      .padding(.horizontal, 16)
+      .padding(.top, 8)
+    }
+    .animation(.spring(response: 0.35, dampingFraction: 0.82), value: expandedComplex)
     .onReceive(NotificationCenter.default.publisher(for: .clientOpenMyPromotions)) { _ in
-      // Ferme la fiche complexe (et sa mini-card) en parallèle de la redirection vers l'onglet Promos
-      expandedComplex = nil
-      selectedComplex = nil
+      withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+        expandedComplex = nil
+        visibleComplex = nil
+      }
     }
     .task {
       locationManager.start()
@@ -2586,6 +2945,34 @@ struct ClientMapPageView: View {
     position = .region(r)
     Task {
       await viewModel.loadComplexes(in: r)
+    }
+  }
+
+  private func selectSearchResult(_ result: ClientMapSearchResult) {
+    // Fermer la mini card actuelle
+    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+      visibleComplex = nil
+    }
+
+    // Centrer la carte sur le complexe
+    let coord = CLLocationCoordinate2D(latitude: result.latitude, longitude: result.longitude)
+    let r = MKCoordinateRegion(
+      center: coord,
+      span: MKCoordinateSpan(latitudeDelta: 0.02, longitudeDelta: 0.02)
+    )
+    region = r
+    withAnimation(.easeInOut(duration: 0.5)) {
+      position = .region(r)
+    }
+
+    // Charger les complexes de la zone puis sélectionner celui recherché
+    Task {
+      await viewModel.loadComplexes(in: r, force: true)
+      if let match = viewModel.complexes.first(where: { $0.id == result.id }) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+          visibleComplex = match
+        }
+      }
     }
   }
 }

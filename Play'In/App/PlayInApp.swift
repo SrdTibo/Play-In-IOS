@@ -6,6 +6,27 @@
 //
 
 import SwiftUI
+import UIKit
+
+// MARK: - AppDelegate (APNs token)
+
+class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    ) {
+        NotificationService.shared.handleToken(deviceToken)
+    }
+
+    func application(
+        _ application: UIApplication,
+        didFailToRegisterForRemoteNotificationsWithError error: Error
+    ) {
+        print("[AppDelegate] Remote notification registration failed: \(error.localizedDescription)")
+    }
+}
+
+// MARK: - Root view
 
 struct AppRootView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
@@ -32,11 +53,20 @@ struct AppRootView: View {
         .onAppear {
             authViewModel.start()
         }
+        .onChange(of: authViewModel.route) { _, newRoute in
+            // Demande la permission push dès que l'utilisateur est un client vérifié
+            if newRoute == .client {
+                NotificationService.shared.requestPermission()
+            }
+        }
     }
 }
 
+// MARK: - App
+
 @main
 struct PlayInApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var authViewModel = AuthViewModel(supabase: SupabaseService.shared)
 
     var body: some Scene {

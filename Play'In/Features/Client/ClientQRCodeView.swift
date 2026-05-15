@@ -42,17 +42,18 @@ struct ClientQRFloatingButton: View {
       showQRSheet = true
     } label: {
       ZStack {
-        Circle()
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
           .fill(Color(white: 0.12))
-          .frame(width: 56, height: 56)
+          .frame(width: 52, height: 52)
           .overlay(
-            Circle().strokeBorder(accent, lineWidth: 2)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+              .strokeBorder(accent, lineWidth: 2)
           )
           .shadow(color: .black.opacity(0.35), radius: 10, y: 4)
 
-        qrMiniPreview
-          .frame(width: 26, height: 26)
-          .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        Image(systemName: "qrcode")
+          .font(.system(size: 24, weight: .medium))
+          .foregroundStyle(accent)
       }
     }
     .buttonStyle(.plain)
@@ -61,23 +62,6 @@ struct ClientQRFloatingButton: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .presentationCornerRadius(28)
-    }
-  }
-
-  @ViewBuilder
-  private var qrMiniPreview: some View {
-    if let userId = SupabaseService.shared.currentUserId(),
-       let img = QRCodeGenerator.generate(from: "playin:client:\(userId.uuidString)", size: 100) {
-      Image(uiImage: img)
-        .interpolation(.none)
-        .resizable()
-        .scaledToFit()
-        .colorInvert()
-        .colorMultiply(accent)
-    } else {
-      Image(systemName: "qrcode")
-        .font(.system(size: 22, weight: .medium))
-        .foregroundStyle(accent)
     }
   }
 }

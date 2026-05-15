@@ -8,24 +8,49 @@
 import SwiftUI
 
 struct WrongRoleView: View {
-    @EnvironmentObject var authViewModel: AuthViewModel
+  @EnvironmentObject var authViewModel: AuthViewModel
 
-    var body: some View {
-        VStack(spacing: 16) {
+  var body: some View {
+    ZStack {
+      AuthBackground()
+
+      VStack(spacing: 0) {
+        Spacer()
+
+        VStack(spacing: 20) {
+          // Icône
+          ZStack {
+            Circle()
+              .fill(Color.white.opacity(0.07))
+              .frame(width: 80, height: 80)
+            Image(systemName: "lock.shield.fill")
+              .font(.system(size: 34, weight: .bold))
+              .foregroundStyle(.white.opacity(0.55))
+          }
+
+          // Texte
+          VStack(spacing: 10) {
             Text("Accès refusé")
-                .font(.title3)
-                .fontWeight(.semibold)
+              .font(.system(size: 26, weight: .black))
+              .foregroundStyle(.white)
 
-            Text("Cette app iOS est réservée aux clients. Merci d’utiliser le web pour ce compte.")
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-
-            Button("Se déconnecter") {
-                authViewModel.signOut()
-            }
-            .buttonStyle(.borderedProminent)
-            .frame(maxWidth: .infinity)
+            Text("Cette app iOS est réservée aux clients.\nMerci d'utiliser le backoffice web\npour ce compte.")
+              .font(.system(size: 14, weight: .medium))
+              .foregroundStyle(.white.opacity(0.45))
+              .multilineTextAlignment(.center)
+              .lineSpacing(3)
+          }
         }
-        .padding()
+
+        Spacer()
+
+        PIActionButton(title: "Se déconnecter", style: .outlined) {
+          authViewModel.signOut()
+        }
+        .padding(.horizontal, 24)
+        .padding(.bottom, 52)
+      }
     }
+    .preferredColorScheme(.dark)
+  }
 }

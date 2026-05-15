@@ -12,100 +12,91 @@ struct AuthView: View {
 
   var body: some View {
     ZStack {
-      VStack(spacing: 16) {
+      AuthBackground()
+
+      VStack(spacing: 0) {
         Spacer()
 
-        Text("Play’In")
-          .font(.largeTitle)
-          .fontWeight(.semibold)
+        // ── Logo ──────────────────────────────────────────────────────
+        PlayInBrandMark()
 
-        Button {
-          authViewModel.signInWithGoogle()
-        } label: {
-          Text("Continuer avec Google")
+        Spacer()
+
+        // ── Formulaire de connexion ───────────────────────────────────
+        VStack(spacing: 14) {
+
+          // Bouton Google
+          Button { authViewModel.signInWithGoogle() } label: {
+            HStack(spacing: 10) {
+              Text("G")
+                .font(.system(size: 17, weight: .black))
+                .foregroundStyle(Color(red: 0.26, green: 0.52, blue: 0.96))
+              Text("Continuer avec Google")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(Color.appDark)
+            }
             .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(.borderedProminent)
+            .frame(height: 52)
+            .background(.white)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+          }
 
-        VStack(spacing: 12) {
-          TextField("Email", text: $authViewModel.email)
+          PIOrSeparator()
+
+          // Champ email
+          TextField("Adresse email", text: $authViewModel.email)
+            .keyboardType(.emailAddress)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
-            .keyboardType(.emailAddress)
             .textContentType(.emailAddress)
-            .padding(12)
-            .background(.thinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .piInputStyle()
 
           if authViewModel.pendingOTPEmail == nil {
-            Button {
+            // Étape 1 : envoyer le code
+            PIActionButton(title: "Envoyer le code", style: .outlined) {
               authViewModel.sendEmailOTPCode()
-            } label: {
-              Text("Envoyer le code")
-                .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
           } else {
-            Text("Code envoyé à \(authViewModel.pendingOTPEmail ?? "")")
-              .font(.footnote)
-              .foregroundStyle(.secondary)
-              .frame(maxWidth: .infinity, alignment: .leading)
+            // Étape 2 : saisir et vérifier le code
+            VStack(spacing: 10) {
+              Text("Code envoyé à \(authViewModel.pendingOTPEmail ?? "")")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.white.opacity(0.5))
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-            TextField("Code", text: $authViewModel.otpCode)
-              .keyboardType(.numberPad)
-              .textContentType(.oneTimeCode)
-              .textInputAutocapitalization(.never)
-              .autocorrectionDisabled()
-              .padding(12)
-              .background(.thinMaterial)
-              .clipShape(RoundedRectangle(cornerRadius: 12))
+              TextField("Code à 6 chiffres", text: $authViewModel.otpCode)
+                .keyboardType(.numberPad)
+                .textContentType(.oneTimeCode)
+                .piInputStyle()
 
-            Button {
-              authViewModel.verifyEmailOTPCode()
-            } label: {
-              Text("Vérifier le code")
-                .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-
-            HStack(spacing: 12) {
-              Button {
-                authViewModel.sendEmailOTPCode()
-              } label: {
-                Text("Renvoyer")
-                  .frame(maxWidth: .infinity)
+              PIActionButton(title: "Vérifier le code", style: .primary) {
+                authViewModel.verifyEmailOTPCode()
               }
-              .buttonStyle(.bordered)
 
-              Button {
-                authViewModel.pendingOTPEmail = nil
-                authViewModel.otpCode = ""
-              } label: {
-                Text("Changer d’email")
-                  .frame(maxWidth: .infinity)
+              HStack(spacing: 10) {
+                PIActionButton(title: "Renvoyer", style: .ghost) {
+                  authViewModel.sendEmailOTPCode()
+                }
+                PIActionButton(title: "Changer d'email", style: .ghost) {
+                  authViewModel.pendingOTPEmail = nil
+                  authViewModel.otpCode = ""
+                }
               }
-              .buttonStyle(.bordered)
             }
           }
 
-          if let message = authViewModel.errorMessage, !message.isEmpty {
-            Text(message)
-              .font(.footnote)
-              .foregroundStyle(.red)
-              .frame(maxWidth: .infinity, alignment: .leading)
+          if let msg = authViewModel.errorMessage, !msg.isEmpty {
+            PIErrorRow(message: msg)
           }
         }
-
-        Spacer()
+        .padding(.horizontal, 24)
+        .padding(.bottom, 52)
       }
-      .padding()
 
       if authViewModel.isLoading {
-        Color.black.opacity(0.2)
-          .ignoresSafeArea()
-
-        ProgressView()
+        PILoadingOverlay()
       }
     }
+    .preferredColorScheme(.dark)
   }
 }

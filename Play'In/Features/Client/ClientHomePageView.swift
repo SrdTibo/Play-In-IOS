@@ -31,45 +31,6 @@ struct ClientHomePageView: View {
             .background(.ultraThinMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
 
-            VStack(alignment: .leading, spacing: 10) {
-              Text("Raccourcis")
-                .font(.headline)
-
-              HStack(spacing: 10) {
-                NavigationLink {
-                  ClientMapPageView()
-                } label: {
-                  HStack(spacing: 10) {
-                    Image(systemName: "map.fill")
-                    Text("Ouvrir la carte")
-                      .fontWeight(.semibold)
-                    Spacer()
-                  }
-                  .padding(.horizontal, 12)
-                  .padding(.vertical, 12)
-                  .frame(maxWidth: .infinity)
-                  .background(.ultraThinMaterial)
-                  .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                }
-
-                NavigationLink {
-                  ClientPromotionsPageView()
-                } label: {
-                  HStack(spacing: 10) {
-                    Image(systemName: "tag.fill")
-                    Text("Promos")
-                      .fontWeight(.semibold)
-                    Spacer()
-                  }
-                  .padding(.horizontal, 12)
-                  .padding(.vertical, 12)
-                  .frame(maxWidth: .infinity)
-                  .background(.ultraThinMaterial)
-                  .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                }
-              }
-            }
-
             Spacer(minLength: 0)
           }
           .padding(16)

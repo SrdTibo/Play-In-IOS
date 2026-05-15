@@ -45,6 +45,10 @@ struct ClientAccountPageView: View {
   @State private var isSaving: Bool = false
   @State private var errorMessage: String?
 
+  // Notifications
+  @State private var masterNotificationsEnabled: Bool = true
+  @State private var isSavingNotifPref: Bool = false
+
   var body: some View {
     NavigationStack {
       Form {
@@ -77,6 +81,17 @@ struct ClientAccountPageView: View {
               .foregroundStyle(.red)
               .font(.footnote)
           }
+        }
+
+        Section("Notifications") {
+          Toggle("Recevoir des notifications", isOn: $masterNotificationsEnabled)
+            .disabled(isSavingNotifPref)
+            .onChange(of: masterNotificationsEnabled) { _, newValue in
+              Task { await saveNotifPref(enabled: newValue) }
+            }
+          Text("Active ou désactive toutes les notifications promotionnelles de Play'In.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
         }
 
         Section {
@@ -142,8 +157,49 @@ struct ClientAccountPageView: View {
       firstName = row.firstName ?? ""
       lastName = row.lastName ?? ""
       phone = row.phone ?? ""
+
+      // Charger la préférence de notifications (défaut true si pas de ligne)
+      struct NotifPrefRow: Decodable {
+        let masterEnabled: Bool
+        enum CodingKeys: String, CodingKey { case masterEnabled = "master_enabled" }
+      }
+      let prefs: [NotifPrefRow] = try await SupabaseService.shared.client
+        .from("user_notification_preferences")
+        .select("master_enabled")
+        .eq("user_id", value: userId)
+        .limit(1)
+        .execute()
+        .value
+      masterNotificationsEnabled = prefs.first?.masterEnabled ?? true
     } catch {
       errorMessage = error.localizedDescription
+    }
+  }
+
+  @MainActor
+  private func saveNotifPref(enabled: Bool) async {
+    guard let userId = SupabaseService.shared.currentUserId() else { return }
+    isSavingNotifPref = true
+    defer { isSavingNotifPref = false }
+    do {
+      struct NotifPrefUpsert: Encodable {
+        let userId: UUID
+        let masterEnabled: Bool
+        enum CodingKeys: String, CodingKey {
+          case userId = "user_id"
+          case masterEnabled = "master_enabled"
+        }
+      }
+      try await SupabaseService.shared.client
+        .from("user_notification_preferences")
+        .upsert(
+          NotifPrefUpsert(userId: userId, masterEnabled: enabled),
+          onConflict: "user_id"
+        )
+        .execute()
+    } catch {
+      // Revert si échec
+      masterNotificationsEnabled = !enabled
     }
   }
 

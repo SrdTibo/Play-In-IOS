@@ -1010,10 +1010,38 @@ extension MKDirections {
   }
 }
 
+enum MapZoomLevel {
+  case close    // < 0.08 → annotation complète
+  case medium   // 0.08 ..< 0.4 → point
+  case far      // >= 0.4 → clusters
+
+  init(latitudeDelta: Double) {
+    if latitudeDelta < 0.08 {
+      self = .close
+    } else if latitudeDelta < 0.4 {
+      self = .medium
+    } else {
+      self = .far
+    }
+  }
+}
+
 struct ClientMapComplexAnnotationView: View {
   let complex: ClientMapComplex
+  var zoomLevel: MapZoomLevel = .close
 
   var body: some View {
+    switch zoomLevel {
+    case .close:
+      fullAnnotation
+    case .medium:
+      dotAnnotation
+    case .far:
+      EmptyView()
+    }
+  }
+
+  private var fullAnnotation: some View {
     VStack(spacing: 5) {
       Text(complex.name)
         .font(.system(size: 12, weight: .bold))
@@ -1048,8 +1076,85 @@ struct ClientMapComplexAnnotationView: View {
     }
   }
 
+  private var dotAnnotation: some View {
+    Circle()
+      .fill(complex.promotionsCount > 0 ? Color.appYellow : Color(white: 0.35))
+      .frame(width: 12, height: 12)
+      .overlay(Circle().strokeBorder(.white.opacity(0.4), lineWidth: 1.5))
+      .shadow(color: .black.opacity(0.4), radius: 4, y: 2)
+  }
+
   private var mainEmoji: String {
     complex.activities.first?.emoji ?? "🏟️"
+  }
+}
+
+// MARK: - Cluster Annotation
+
+struct MapCluster: Identifiable {
+  let id = UUID()
+  let coordinate: CLLocationCoordinate2D
+  let count: Int
+  let hasPromos: Bool
+}
+
+struct ClientMapClusterAnnotationView: View {
+  let cluster: MapCluster
+
+  var body: some View {
+    ZStack {
+      Circle()
+        .fill(cluster.hasPromos ? Color.appYellow : Color(white: 0.25))
+        .frame(width: size, height: size)
+        .overlay(Circle().strokeBorder(.white.opacity(0.3), lineWidth: 1.5))
+        .shadow(color: .black.opacity(0.4), radius: 6, y: 3)
+
+      Text("\(cluster.count)")
+        .font(.system(size: fontSize, weight: .bold))
+        .foregroundStyle(cluster.hasPromos ? .black : .white)
+    }
+  }
+
+  private var size: CGFloat {
+    if cluster.count < 5 { return 36 }
+    if cluster.count < 20 { return 42 }
+    return 48
+  }
+
+  private var fontSize: CGFloat {
+    if cluster.count < 5 { return 14 }
+    if cluster.count < 20 { return 15 }
+    return 16
+  }
+}
+
+func clusterComplexes(_ complexes: [ClientMapComplex], gridSize: Double) -> [MapCluster] {
+  var buckets: [String: (lat: Double, lng: Double, count: Int, hasPromos: Bool)] = [:]
+
+  for c in complexes {
+    let bx = Int(floor(c.latitude / gridSize))
+    let by = Int(floor(c.longitude / gridSize))
+    let key = "\(bx)_\(by)"
+
+    if var bucket = buckets[key] {
+      // Moyenne mobile pour le centre
+      let n = Double(bucket.count)
+      bucket.lat = (bucket.lat * n + c.latitude) / (n + 1)
+      bucket.lng = (bucket.lng * n + c.longitude) / (n + 1)
+      bucket.count += 1
+      if c.promotionsCount > 0 { bucket.hasPromos = true }
+      buckets[key] = bucket
+    } else {
+      buckets[key] = (c.latitude, c.longitude, 1, c.promotionsCount > 0)
+    }
+  }
+
+  return buckets.values.map { b in
+    MapCluster(
+      coordinate: CLLocationCoordinate2D(latitude: b.lat, longitude: b.lng),
+      count: b.count,
+      hasPromos: b.hasPromos
+    )
   }
 }
 
@@ -1235,6 +1340,10 @@ struct ClientComplexSheetView: View {
   @State private var generatedResult: GeneratedPromotionResult?
   @State private var generationErrorMessage: String?
 
+  // Favori
+  @State private var isFavorite: Bool = false
+  @State private var isFavoriteLoading: Bool = false
+
   enum SheetTab: String, CaseIterable, Identifiable {
     case promotions = "Promotions"
     case about = "À propos"
@@ -1255,6 +1364,16 @@ struct ClientComplexSheetView: View {
               .fontWeight(.bold)
               .lineLimit(2)
             Spacer(minLength: 8)
+            Button {
+              toggleFavorite()
+            } label: {
+              Image(systemName: isFavorite ? "star.fill" : "star")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(isFavorite ? Color.appYellow : Color.secondary)
+                .contentTransition(.symbolEffect(.replace))
+            }
+            .disabled(isFavoriteLoading)
+            .buttonStyle(.plain)
           }
           .padding(.top, 28)
 
@@ -1494,6 +1613,7 @@ struct ClientComplexSheetView: View {
         }
       }
     }
+    .task { await loadFavoriteState() }
   }
 
   private func showTooltip(for activity: ClientActivity) {
@@ -1512,6 +1632,43 @@ struct ClientComplexSheetView: View {
         guard tooltipTokensByLabel[label] == token else { return }
         tooltipTokensByLabel.removeValue(forKey: label)
         tooltipPopByLabel.removeValue(forKey: label)
+      }
+    }
+  }
+
+  // MARK: - Favoris
+
+  private struct FavoriteRow: Decodable { let id: UUID }
+
+  private func loadFavoriteState() async {
+    guard let userId = SupabaseService.shared.currentUserId() else { return }
+    do {
+      let rows: [FavoriteRow] = try await SupabaseService.shared.client
+        .from("user_favorite_complexes")
+        .select("id")
+        .eq("user_id", value: userId)
+        .eq("complex_id", value: complex.id)
+        .limit(1)
+        .execute()
+        .value
+      isFavorite = !rows.isEmpty
+    } catch {
+      // Non critique — on laisse à false
+    }
+  }
+
+  private func toggleFavorite() {
+    let newValue = !isFavorite
+    isFavorite = newValue        // mise à jour optimiste
+    isFavoriteLoading = true
+    Task {
+      defer { Task { @MainActor in isFavoriteLoading = false } }
+      do {
+        let funcName = newValue ? "favorite_complex" : "unfavorite_complex"
+        try await SupabaseService.shared.client.functions
+          .invoke(funcName, options: .init(body: ["complex_id": complex.id.uuidString]))
+      } catch {
+        Task { @MainActor in isFavorite = !newValue }  // revert
       }
     }
   }
@@ -2777,43 +2934,68 @@ struct ClientMapPageView: View {
   )
   @State private var lastQueryAt: Date = .distantPast
   @State private var pendingRecenter: Bool = false
+  @State private var currentZoom: MapZoomLevel = .close
+
+  private var clusters: [MapCluster] {
+    clusterComplexes(viewModel.complexes, gridSize: region.span.latitudeDelta * 0.6)
+  }
 
   var body: some View {
     ZStack(alignment: .bottomTrailing) {
       Map(position: $position, interactionModes: .all) {
-        // 1. Complexes sans promo (arrière-plan)
-        ForEach(viewModel.complexes.filter { $0.promotionsCount == 0 }) { complex in
-          Annotation("", coordinate: complex.coordinate) {
-            ClientMapComplexAnnotationView(complex: complex)
-              .onTapGesture {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                  if visibleComplex == complex {
-                    visibleComplex = nil
-                  } else {
-                    visibleComplex = complex
+        if currentZoom == .far {
+          // Clusters
+          ForEach(clusters) { cluster in
+            Annotation("", coordinate: cluster.coordinate) {
+              ClientMapClusterAnnotationView(cluster: cluster)
+                .onTapGesture {
+                  let r = MKCoordinateRegion(
+                    center: cluster.coordinate,
+                    span: MKCoordinateSpan(latitudeDelta: region.span.latitudeDelta * 0.3, longitudeDelta: region.span.longitudeDelta * 0.3)
+                  )
+                  withAnimation(.easeInOut(duration: 0.4)) {
+                    position = .region(r)
                   }
                 }
-              }
+            }
+          }
+        } else {
+          // 1. Complexes sans promo (arrière-plan)
+          ForEach(viewModel.complexes.filter { $0.promotionsCount == 0 }) { complex in
+            Annotation("", coordinate: complex.coordinate) {
+              ClientMapComplexAnnotationView(complex: complex, zoomLevel: currentZoom)
+                .animation(.easeInOut(duration: 0.25), value: currentZoom)
+                .onTapGesture {
+                  withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                    if visibleComplex == complex {
+                      visibleComplex = nil
+                    } else {
+                      visibleComplex = complex
+                    }
+                  }
+                }
+            }
+          }
+
+          // 2. Complexes avec promos (au-dessus)
+          ForEach(viewModel.complexes.filter { $0.promotionsCount > 0 }) { complex in
+            Annotation("", coordinate: complex.coordinate) {
+              ClientMapComplexAnnotationView(complex: complex, zoomLevel: currentZoom)
+                .animation(.easeInOut(duration: 0.25), value: currentZoom)
+                .onTapGesture {
+                  withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                    if visibleComplex == complex {
+                      visibleComplex = nil
+                    } else {
+                      visibleComplex = complex
+                    }
+                  }
+                }
+            }
           }
         }
 
-        // 2. Complexes avec promos (au-dessus)
-        ForEach(viewModel.complexes.filter { $0.promotionsCount > 0 }) { complex in
-          Annotation("", coordinate: complex.coordinate) {
-            ClientMapComplexAnnotationView(complex: complex)
-              .onTapGesture {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                  if visibleComplex == complex {
-                    visibleComplex = nil
-                  } else {
-                    visibleComplex = complex
-                  }
-                }
-              }
-          }
-        }
-
-        // 3. Position utilisateur
+        // 3. Position utilisateur (toujours visible, premier plan)
         if let userLoc = locationManager.location {
           Annotation("", coordinate: userLoc.coordinate) {
             ClientUserLocationIndicatorView(heading: locationManager.heading)
@@ -2828,6 +3010,12 @@ struct ClientMapPageView: View {
       }
       .onMapCameraChange { ctx in
         region = ctx.region
+        let newZoom = MapZoomLevel(latitudeDelta: ctx.region.span.latitudeDelta)
+        if newZoom != currentZoom {
+          withAnimation(.easeInOut(duration: 0.25)) {
+            currentZoom = newZoom
+          }
+        }
         let now = Date()
         if now.timeIntervalSince(lastQueryAt) < 0.6 { return }
         lastQueryAt = now

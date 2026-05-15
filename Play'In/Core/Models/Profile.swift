@@ -18,6 +18,7 @@ struct Profile: Codable, Identifiable {
     let roleVerified: Bool?
     let isAdmin: Bool?
     let onboardingCompleted: Bool?
+    let dateOfBirth: String?
 
     var userRole: UserRole {
         UserRole(rawValue: role) ?? .other
@@ -34,6 +35,7 @@ struct Profile: Codable, Identifiable {
         case roleVerified = "role_verified"
         case isAdmin = "is_admin"
         case onboardingCompleted = "onboarding_completed"
+        case dateOfBirth = "date_of_birth"
     }
 }
 

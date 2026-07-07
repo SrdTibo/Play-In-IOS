@@ -113,28 +113,18 @@ final class SupabaseService {
   }
 
   func fetchOrCreateClientProfile(userId: UUID) async throws -> Profile {
-    let existing: [Profile] = try await client
-      .from("profiles")
-      .select()
-      .eq("id", value: userId)
-      .limit(1)
+    // RPC SECURITY DEFINER : crée le profil client si absent (basé sur auth.uid(),
+    // insensible aux races de session et aux policies RLS côté client).
+    let rows: [Profile] = try await client
+      .rpc("ensure_client_profile")
       .execute()
       .value
 
-    if let profile = existing.first {
-      if profile.role != UserRole.client.rawValue { throw SupabaseServiceError.wrongRole }
-      return profile
+    guard let profile = rows.first else {
+      throw SupabaseServiceError.unauthenticated
     }
-
-    let inserted: Profile = try await client
-      .from("profiles")
-      .insert(ProfileInsert(id: userId, role: UserRole.client.rawValue, onboardingCompleted: false))
-      .select()
-      .single()
-      .execute()
-      .value
-
-    return inserted
+    if profile.role != UserRole.client.rawValue { throw SupabaseServiceError.wrongRole }
+    return profile
   }
 
   func fetchOrCreateClientProfile() async throws -> Profile {

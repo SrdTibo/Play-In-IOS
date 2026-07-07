@@ -7,6 +7,9 @@
 
 import SwiftUI
 import CoreImage.CIFilterBuiltins
+import PassKit
+import Supabase
+import Functions
 
 // MARK: - QR Code Generator
 
@@ -73,9 +76,15 @@ struct ClientQRCodeSheetView: View {
 
   private let accent = Color.appYellow
 
+  // Apple Wallet
+  @State private var walletPass: PKPass?
+  @State private var showAddPasses = false
+  @State private var isLoadingPass = false
+  @State private var walletError: String?
+
   var body: some View {
     ZStack {
-      Color.black.ignoresSafeArea()
+      Color.appBackground.ignoresSafeArea()
 
       VStack(spacing: 24) {
         Spacer().frame(height: 8)
@@ -125,8 +134,85 @@ struct ClientQRCodeSheetView: View {
             .clipShape(Capsule())
         }
 
+        // Apple Wallet
+        if PKAddPassesViewController.canAddPasses() {
+          ZStack {
+            AddPassButtonView {
+              Task { await loadWalletPass() }
+            }
+            .frame(width: 240, height: 48)
+            .opacity(isLoadingPass ? 0.4 : 1)
+
+            if isLoadingPass {
+              ProgressView().tint(.white)
+            }
+          }
+        }
+
+        if let err = walletError {
+          Text(err)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(.red)
+        }
+
         Spacer()
       }
     }
+    .sheet(isPresented: $showAddPasses) {
+      if let pass = walletPass {
+        AddPassesControllerView(pass: pass)
+          .ignoresSafeArea()
+      }
+    }
   }
+
+  @MainActor
+  private func loadWalletPass() async {
+    guard !isLoadingPass else { return }
+    isLoadingPass = true
+    walletError = nil
+    defer { isLoadingPass = false }
+    do {
+      let data: Data = try await SupabaseService.shared.client.functions
+        .invoke("wallet-pass") { data, _ in data }
+      walletPass = try PKPass(data: data)
+      showAddPasses = true
+    } catch {
+      walletError = "Impossible de générer la carte Wallet."
+    }
+  }
+}
+
+// MARK: - PassKit wrappers
+
+/// Bouton natif "Ajouter à Apple Wallet" (design officiel Apple).
+private struct AddPassButtonView: UIViewRepresentable {
+  let action: () -> Void
+
+  func makeUIView(context: Context) -> PKAddPassButton {
+    let button = PKAddPassButton(addPassButtonStyle: .black)
+    button.addTarget(context.coordinator, action: #selector(Coordinator.tap), for: .touchUpInside)
+    return button
+  }
+
+  func updateUIView(_ uiView: PKAddPassButton, context: Context) {}
+
+  func makeCoordinator() -> Coordinator { Coordinator(action: action) }
+
+  final class Coordinator: NSObject {
+    let action: () -> Void
+    init(action: @escaping () -> Void) { self.action = action }
+    @objc func tap() { action() }
+  }
+}
+
+/// Présente la feuille système d'ajout du pass à Wallet.
+private struct AddPassesControllerView: UIViewControllerRepresentable {
+  let pass: PKPass
+
+  func makeUIViewController(context: Context) -> UIViewController {
+    PKAddPassesViewController(pass: pass) ?? UIViewController()
+  }
+
+  func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
 }

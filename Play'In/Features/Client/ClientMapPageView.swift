@@ -641,6 +641,12 @@ struct ClientMapSearchBarView: View {
     }
     .animation(.spring(response: 0.35, dampingFraction: 0.85), value: isFocused)
     .animation(.spring(response: 0.35, dampingFraction: 0.85), value: searchVM.results.map(\.id))
+    .onReceive(NotificationCenter.default.publisher(for: .clientOpenMapSearch)) { _ in
+      Task {
+        try? await Task.sleep(for: .milliseconds(400))
+        isFocused = true
+      }
+    }
   }
 }
 

@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AuthenticationServices
 
 struct AuthView: View {
   @EnvironmentObject var authViewModel: AuthViewModel
@@ -24,6 +25,22 @@ struct AuthView: View {
 
         // ── Formulaire de connexion ───────────────────────────────────
         VStack(spacing: 14) {
+
+          // Bouton Apple — mêmes dimensions et typo que le bouton Google
+          Button { authViewModel.signInWithApple() } label: {
+            HStack(spacing: 10) {
+              Image(systemName: "apple.logo")
+                .font(.system(size: 17, weight: .black))
+                .foregroundStyle(Color.appDark)
+              Text("Continuer avec Apple")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(Color.appDark)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 52)
+            .background(.white)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+          }
 
           // Bouton Google
           Button { authViewModel.signInWithGoogle() } label: {

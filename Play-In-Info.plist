@@ -16,6 +16,14 @@
 		</dict>
 		<dict/>
 	</array>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>fr</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>fr</string>
+	</array>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>SupabaseAnonKey</key>
 	<string>eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlkc3R6cWVocHVwdmZrcmFteWxjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA2NjIzMjAsImV4cCI6MjA4NjIzODMyMH0.OWSInxdB6uDOmH85Yzz2KQX4FzDRfLprQWZnYWJ9toI</string>
 	<key>SupabaseRedirectURL</key>

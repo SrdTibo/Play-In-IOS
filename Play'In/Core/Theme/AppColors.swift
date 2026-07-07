@@ -6,6 +6,7 @@
 import SwiftUI
 
 extension Color {
-  static let appYellow = Color(red: 0.88, green: 1.0, blue: 0.18)
-  static let appDark   = Color(red: 0.067, green: 0.094, blue: 0.153) // #111827
+  static let appYellow     = Color(red: 0.88, green: 1.0, blue: 0.18)
+  static let appDark       = Color(red: 0.067, green: 0.094, blue: 0.153) // #111827
+  static let appBackground = Color(red: 0.10, green: 0.10, blue: 0.08)   // fond sombre home
 }

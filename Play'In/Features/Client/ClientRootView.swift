@@ -78,5 +78,8 @@ struct ClientRootView: View {
     .onReceive(NotificationCenter.default.publisher(for: .clientOpenMyPromotions)) { _ in
       selection = 2
     }
+    .onReceive(NotificationCenter.default.publisher(for: .clientOpenMapSearch)) { _ in
+      selection = 1
+    }
   }
 }

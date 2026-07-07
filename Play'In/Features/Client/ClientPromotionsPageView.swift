@@ -161,7 +161,7 @@ struct ClientPromotionsPageView: View {
 
   var body: some View {
     ZStack {
-      Color.black.ignoresSafeArea()
+      Color.appBackground.ignoresSafeArea()
 
       VStack(alignment: .leading, spacing: 16) {
         Text("Promotions")
@@ -201,9 +201,13 @@ struct ClientPromotionsPageView: View {
           HStack { Spacer(); ProgressView().tint(.white); Spacer() }
           Spacer()
         } else if visibleRows.isEmpty {
-          Spacer()
-          emptyState
-          Spacer()
+          GeometryReader { geo in
+            ScrollView {
+              emptyState
+                .frame(width: geo.size.width, height: geo.size.height)
+            }
+            .refreshable { await Task { await vm.load() }.value }
+          }
         } else {
           ScrollView {
             LazyVStack(spacing: 14) {
@@ -216,6 +220,7 @@ struct ClientPromotionsPageView: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 24)
           }
+          .refreshable { await Task { await vm.load() }.value }
         }
       }
 

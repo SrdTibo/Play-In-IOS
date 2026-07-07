@@ -9,6 +9,7 @@
 import Foundation
 import UserNotifications
 import UIKit
+import Supabase
 
 final class NotificationService {
   static let shared = NotificationService()

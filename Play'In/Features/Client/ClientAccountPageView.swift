@@ -49,6 +49,9 @@ struct ClientAccountPageView: View {
   @State private var masterNotificationsEnabled: Bool = true
   @State private var isSavingNotifPref: Bool = false
 
+  // Déconnexion
+  @State private var showSignOutConfirm: Bool = false
+
   var body: some View {
     NavigationStack {
       Form {
@@ -74,6 +77,7 @@ struct ClientAccountPageView: View {
             .autocorrectionDisabled()
             .disabled(true)
         }
+        .listRowBackground(Color.white.opacity(0.07))
 
         if let message = errorMessage, !message.isEmpty {
           Section {
@@ -81,6 +85,7 @@ struct ClientAccountPageView: View {
               .foregroundStyle(.red)
               .font(.footnote)
           }
+          .listRowBackground(Color.white.opacity(0.07))
         }
 
         Section("Notifications") {
@@ -93,6 +98,7 @@ struct ClientAccountPageView: View {
             .font(.footnote)
             .foregroundStyle(.secondary)
         }
+        .listRowBackground(Color.white.opacity(0.07))
 
         Section {
           Button("Enregistrer") {
@@ -101,12 +107,17 @@ struct ClientAccountPageView: View {
           .disabled(isSaving || isLoading || firstNameTrimmed.isEmpty || lastNameTrimmed.isEmpty)
 
           Button("Se déconnecter") {
-            authViewModel.signOut()
+            showSignOutConfirm = true
           }
           .foregroundStyle(.red)
         }
+        .listRowBackground(Color.white.opacity(0.07))
       }
+      .scrollContentBackground(.hidden)
+      .background(Color.appBackground)
+      .foregroundStyle(.white)
       .navigationTitle("Compte")
+      .toolbarColorScheme(.dark, for: .navigationBar)
       .disabled(isLoading)
       .overlay {
         if isLoading || isSaving {
@@ -116,7 +127,16 @@ struct ClientAccountPageView: View {
       .task {
         await load()
       }
+      .alert("Se déconnecter ?", isPresented: $showSignOutConfirm) {
+        Button("Se déconnecter", role: .destructive) {
+          authViewModel.signOut()
+        }
+        Button("Annuler", role: .cancel) {}
+      } message: {
+        Text("Tu devras te reconnecter pour accéder à ton compte.")
+      }
     }
+    .background(Color.appBackground.ignoresSafeArea())
   }
 
   private var firstNameTrimmed: String {

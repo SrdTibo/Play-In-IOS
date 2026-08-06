@@ -7,10 +7,19 @@
 
 import SwiftUI
 import UIKit
+import UserNotifications
 
-// MARK: - AppDelegate (APNs token)
+// MARK: - AppDelegate (APNs token + ouverture des notifications)
 
-class AppDelegate: NSObject, UIApplicationDelegate {
+class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        return true
+    }
+
     func application(
         _ application: UIApplication,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
@@ -23,6 +32,33 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
         print("[AppDelegate] Remote notification registration failed: \(error.localizedDescription)")
+    }
+
+    /// Affiche la notification même quand l'app est au premier plan.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        [.banner, .list, .sound]
+    }
+
+    /// Tap sur une notification : route vers le contenu concerné.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        let info = response.notification.request.content.userInfo
+        guard
+            let complexIdString = info["complex_id"] as? String,
+            let complexId = UUID(uuidString: complexIdString)
+        else { return }
+
+        await MainActor.run {
+            NotificationCenter.default.post(
+                name: .clientOpenComplexFromNotification,
+                object: complexId
+            )
+        }
     }
 }
 

@@ -3,6 +3,8 @@ import CoreLocation
 
 extension Notification.Name {
   static let clientOpenMapSearch = Notification.Name("clientOpenMapSearch")
+  /// Tap sur une notification push : ouvre la fiche du complexe (objet = UUID).
+  static let clientOpenComplexFromNotification = Notification.Name("clientOpenComplexFromNotification")
 }
 
 // MARK: - Main View
@@ -14,6 +16,10 @@ struct ClientHomePageView: View {
 
   @State private var selectedComplex: ClientMapComplex?
   @State private var isLoadingComplex = false
+
+  // Notifications
+  @StateObject private var notifsVM = ClientNotificationsViewModel()
+  @State private var showNotifications = false
 
   var body: some View {
     ZStack(alignment: .bottomTrailing) {
@@ -38,6 +44,7 @@ struct ClientHomePageView: View {
           await vm.loadProfile()
           await vm.loadStats()
           await promosVM.load()
+          await notifsVM.load()
           if let loc = locationManager.location {
             await vm.loadSections(userLocation: loc)
           }
@@ -58,13 +65,38 @@ struct ClientHomePageView: View {
       await vm.loadProfile()
       await vm.loadStats()
       await promosVM.load()
+      await notifsVM.load()
     }
     .onChange(of: locationManager.location) { _, newLoc in
       guard let loc = newLoc, vm.trending.isEmpty else { return }
       Task { await vm.loadSections(userLocation: loc) }
     }
+    .onReceive(NotificationCenter.default.publisher(for: .clientOpenMyPromotions)) { _ in
+      // "Voir ma promo" depuis une fiche ouverte sur la home :
+      // on ferme la fiche pour laisser voir l'onglet Promotions
+      selectedComplex = nil
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .clientOpenComplexFromNotification)) { note in
+      guard let complexId = note.object as? UUID else { return }
+      showNotifications = false
+      openComplex(id: complexId)
+    }
     .sheet(item: $selectedComplex) { complex in
       ClientComplexSheetView(complex: complex, userLocation: locationManager.location)
+    }
+    .sheet(isPresented: $showNotifications, onDismiss: {
+      Task { await notifsVM.markAllRead() }
+    }) {
+      ClientNotificationsSheetView(vm: notifsVM) { complexId in
+        showNotifications = false
+        // Laisse la sheet se fermer avant d'ouvrir la fiche complexe
+        Task {
+          try? await Task.sleep(for: .milliseconds(350))
+          openComplex(id: complexId)
+        }
+      }
+      .presentationDetents([.large])
+      .presentationDragIndicator(.visible)
     }
   }
 
@@ -89,6 +121,9 @@ struct ClientHomePageView: View {
         .font(.system(size: 28, weight: .black))
         .foregroundColor(.white)
       Spacer()
+      ClientNotificationsBellButton(unreadCount: notifsVM.unreadCount) {
+        showNotifications = true
+      }
     }
     .padding(.horizontal, 20)
   }

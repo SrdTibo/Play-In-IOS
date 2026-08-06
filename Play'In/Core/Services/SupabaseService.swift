@@ -115,10 +115,19 @@ final class SupabaseService {
   func fetchOrCreateClientProfile(userId: UUID) async throws -> Profile {
     // RPC SECURITY DEFINER : crée le profil client si absent (basé sur auth.uid(),
     // insensible aux races de session et aux policies RLS côté client).
-    let rows: [Profile] = try await client
-      .rpc("ensure_client_profile")
-      .execute()
-      .value
+    let rows: [Profile]
+    do {
+      rows = try await client
+        .rpc("ensure_client_profile")
+        .execute()
+        .value
+    } catch {
+      // Compte supprimé côté serveur alors que le device détient encore un JWT valide
+      if "\(error)".contains("unauthenticated") {
+        throw SupabaseServiceError.unauthenticated
+      }
+      throw error
+    }
 
     guard let profile = rows.first else {
       throw SupabaseServiceError.unauthenticated

@@ -202,6 +202,49 @@ struct ClientPromotionGroup: Identifiable, Hashable {
   let promotions: [ClientPromotionSheetRow]
 
   var id: UUID { activity.id }
+
+  /// Au moins une promotion que le client peut générer maintenant :
+  /// fidélité dont le palier est atteint, ou heure creuse à venir non encore générée.
+  func hasGeneratablePromotion(
+    isAlreadyGenerated: (ClientPromoGenerateTarget) -> Bool
+  ) -> Bool {
+    promotions.contains { promo in
+      switch promo.promotionType {
+      case .loyalty:
+        return promo.isLoyaltyUnlocked
+      case .off_peak:
+        return promo.isUpcoming
+          && !isAlreadyGenerated(.offPeak(promo, activity))
+      }
+    }
+  }
+}
+
+extension ClientPromotionSheetRow {
+  /// Créneau heure creuse encore à venir ou en cours.
+  var isUpcoming: Bool {
+    let now = Date()
+    let iso = ISO8601DateFormatter()
+    iso.formatOptions = [.withInternetDateTime]
+    let dayFmt = DateFormatter()
+    dayFmt.dateFormat = "yyyy-MM-dd"
+    dayFmt.locale = Locale(identifier: "fr_FR")
+
+    if let start = validFrom, let d = iso.date(from: start) {
+      return d >= now || (validUntil.flatMap { iso.date(from: $0) }.map { $0 >= now } ?? true)
+    }
+    if let day = scheduledDate, let d = dayFmt.date(from: day) {
+      return Calendar.current.isDateInToday(d) || d >= now
+    }
+    return true
+  }
+
+  /// Palier de fidélité atteint : la récompense est réclamable.
+  var isLoyaltyUnlocked: Bool {
+    let done = max(0, completedSessions ?? 0)
+    let required = max(1, requiredSessions ?? 0)
+    return done >= required
+  }
 }
 
 enum ClientPromoGenerateTarget: Identifiable, Hashable {
@@ -1544,7 +1587,12 @@ struct ClientComplexSheetView: View {
     .task(id: complex.id) {
       await promotionsViewModel.load(for: complex)
       if selectedPromotionActivityId == nil {
-        selectedPromotionActivityId = promotionsViewModel.groups.first?.id
+        // On déplie d'emblée la première activité offrant une promo réclamable,
+        // à défaut la première de la liste.
+        let generatable = promotionsViewModel.groups.first {
+          $0.hasGeneratablePromotion(isAlreadyGenerated: promotionsViewModel.isAlreadyGenerated)
+        }
+        selectedPromotionActivityId = (generatable ?? promotionsViewModel.groups.first)?.id
       }
     }
     .presentationDetents([.large])
@@ -1893,6 +1941,10 @@ struct ClientPromotionActivityCard: View {
   let onGenerate: (ClientPromoGenerateTarget) -> Void
   let isAlreadyGenerated: (ClientPromoGenerateTarget) -> Bool
 
+  private var hasGeneratablePromotion: Bool {
+    group.hasGeneratablePromotion(isAlreadyGenerated: isAlreadyGenerated)
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       Button(action: onTap) {
@@ -1907,7 +1959,7 @@ struct ClientPromotionActivityCard: View {
             .font(.system(size: 16, weight: .semibold))
             .foregroundStyle(.primary)
 
-          if !group.promotions.isEmpty {
+          if hasGeneratablePromotion {
             Text("Promotion !")
               .font(.system(size: 12, weight: .semibold))
               .foregroundStyle(.black)
@@ -2181,24 +2233,13 @@ struct ClientOffPeakPromotionCard: View {
   }
 
   private var nextUpcomingPromotions: [ClientPromotionSheetRow] {
-    let now = Date()
     let iso = ISO8601DateFormatter()
     iso.formatOptions = [.withInternetDateTime]
     let dayFmt = DateFormatter()
     dayFmt.dateFormat = "yyyy-MM-dd"
     dayFmt.locale = Locale(identifier: "fr_FR")
 
-    let upcoming = promotions.filter { promo in
-      if let start = promo.validFrom, let d = iso.date(from: start) {
-        return d >= now || (promo.validUntil.flatMap { iso.date(from: $0) }.map { $0 >= now } ?? true)
-      }
-      if let day = promo.scheduledDate, let d = dayFmt.date(from: day) {
-        return Calendar.current.isDateInToday(d) || d >= now
-      }
-      return true
-    }
-
-    let sorted = upcoming.sorted { lhs, rhs in
+    let sorted = promotions.filter(\.isUpcoming).sorted { lhs, rhs in
       let ld = iso.date(from: lhs.validFrom ?? "") ?? dayFmt.date(from: lhs.scheduledDate ?? "") ?? .distantFuture
       let rd = iso.date(from: rhs.validFrom ?? "") ?? dayFmt.date(from: rhs.scheduledDate ?? "") ?? .distantFuture
       return ld < rd
@@ -2582,6 +2623,8 @@ struct ClientPromotionGeneratedSuccessView: View {
           Button("Fermer") {
             dismiss()
           }
+          .font(.system(size: 15, weight: .semibold))
+          .foregroundStyle(Color.black)
         }
       }
     }

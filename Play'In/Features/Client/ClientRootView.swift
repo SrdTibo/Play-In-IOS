@@ -81,5 +81,9 @@ struct ClientRootView: View {
     .onReceive(NotificationCenter.default.publisher(for: .clientOpenMapSearch)) { _ in
       selection = 1
     }
+    .onReceive(NotificationCenter.default.publisher(for: .clientOpenComplexFromNotification)) { _ in
+      // La fiche s'ouvre depuis la home : on y bascule d'abord
+      selection = 0
+    }
   }
 }

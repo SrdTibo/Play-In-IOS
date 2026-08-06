@@ -14,6 +14,7 @@ struct HomeComplexRow: Decodable, Identifiable {
   let activitiesJson: [HomeActivity]
   let distanceKm: Double
   let sectionScore: Double
+  let promosCount: Int
 
   enum CodingKeys: String, CodingKey {
     case id, name, city
@@ -22,6 +23,7 @@ struct HomeComplexRow: Decodable, Identifiable {
     case activitiesJson = "activities_json"
     case distanceKm    = "distance_km"
     case sectionScore  = "section_score"
+    case promosCount   = "promos_count"
   }
 }
 

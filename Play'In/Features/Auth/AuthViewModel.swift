@@ -76,6 +76,9 @@ final class AuthViewModel: ObservableObject {
         profile = nil
         route = .wrongRole
       case .unauthenticated:
+        // Session périmée (compte supprimé côté serveur) : on purge le trousseau
+        // pour repartir sur un écran de connexion propre.
+        try? await supabase.signOut()
         profile = nil
         route = .signedOut
       default:
